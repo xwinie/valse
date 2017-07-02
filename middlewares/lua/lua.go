@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/aarzilli/golua/lua"
@@ -21,6 +22,7 @@ func createRequest(ctx *valse.Context) luar.Map {
 		},
 		"url": func() luar.Map {
 			url := ctx.Request.URI()
+
 			return luar.Map{
 				"query": luar.Map{
 					"get": func(key string) string {
@@ -95,12 +97,16 @@ func Lua(options LuaOptions) valse.MiddlewareHandler {
 		}
 	}
 
+	var lock sync.Mutex
+
 	return func(next valse.RequestHandler) valse.RequestHandler {
 		return func(ctx *valse.Context) error {
 
 			req := createRequest(ctx)
 			res := createResponse(ctx)
 
+			lock.Lock()
+			defer lock.Unlock()
 			L.GetGlobal("runMiddlewares")
 
 			luar.GoToLua(L, req)
