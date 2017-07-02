@@ -3,6 +3,7 @@ package lua
 
 import (
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -117,6 +118,15 @@ func getSortedFiles(path string) ([]string, error) {
 	}
 
 	sort.Strings(fileNames)
+
+	luaPath := os.Getenv("LUA_PATH")
+	if luaPath != "" {
+		luaPath += ";"
+	}
+
+	luaPath += path + "/?.lua"
+
+	os.Setenv("LUA_PATH", luaPath)
 
 	return fileNames, nil
 }
