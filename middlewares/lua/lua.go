@@ -4,8 +4,8 @@ package lua
 import (
 	"io/ioutil"
 	"path/filepath"
+	"sort"
 	"strings"
-	"sync"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/aarzilli/golua/lua"
@@ -62,42 +62,96 @@ type LuaOptions struct {
 	Path        string
 	StopOnError bool
 	Lua         *lua.State
+	LuaFactory  func() *lua.State
+	WorkQueue   int
 }
 
-func Lua(options LuaOptions) valse.MiddlewareHandler {
+type File struct {
+	Path    string
+	Content string
+}
 
-	logger := logrus.WithField("prefix", "middlewares:lua")
+func createLua(options LuaOptions, logger logrus.FieldLogger, files []File) *lua.State {
+	var L *lua.State
 
-	L := options.Lua
-	if L == nil {
+	if options.LuaFactory != nil {
+		L = options.LuaFactory()
+	} else {
 		L = luar.Init()
 		L.OpenLibs()
 	}
 
 	L.DoString(string(MustAsset("prelude.lua")))
 
-	files, err := ioutil.ReadDir(options.Path)
+	for _, file := range files {
+		logger.Debugf("loading file: %s", file.Path)
+
+		err := L.DoString(file.Content)
+		if err != nil {
+			if options.StopOnError {
+				logger.Fatal(err)
+			}
+			logger.WithError(err).Errorf("could not load file: %s", file.Path)
+		}
+
+	}
+	return L
+}
+
+func getSortedFiles(path string) ([]string, error) {
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	var fileNames []string
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		ext := filepath.Ext(file.Name())
+		if ext != ".lua" || strings.HasPrefix(file.Name(), "_") {
+			continue
+		}
+
+		fileNames = append(fileNames, filepath.Join(path, file.Name()))
+	}
+
+	sort.Strings(fileNames)
+
+	return fileNames, nil
+}
+
+func Lua(options LuaOptions) valse.MiddlewareHandler {
+
+	logger := logrus.WithField("prefix", "middlewares:lua")
+
+	files, err := getSortedFiles(options.Path)
 	if err != nil {
 		logger.Fatal(err)
 	}
-
+	var out []File
 	for _, file := range files {
 
-		ext := filepath.Ext(file.Name())
-		if ext == ".lua" && !strings.HasPrefix(file.Name(), "_") {
-			logger.Debugf("loading file: %s", file.Name())
-			fullPath := filepath.Join(options.Path, file.Name())
-			err := L.DoFile(fullPath)
-			if err != nil {
-				if options.StopOnError {
-					logger.Fatal(err)
-				}
-				logger.WithError(err).Errorf("could not load file: %s", fullPath)
-			}
+		bs, err := ioutil.ReadFile(file)
+		if err != nil {
+			logger.Fatal(err)
 		}
+		out = append(out, File{
+			Path:    file,
+			Content: string(bs),
+		})
 	}
 
-	var lock sync.Mutex
+	//var lock sync.Mutex
+	wn := options.WorkQueue
+	if wn == 0 {
+		wn = 5
+	}
+
+	ch := make(chan *lua.State, wn+1)
+	for i := 0; i < wn; i++ {
+		ch <- createLua(options, logger, out)
+	}
 
 	return func(next valse.RequestHandler) valse.RequestHandler {
 		return func(ctx *valse.Context) error {
@@ -105,8 +159,13 @@ func Lua(options LuaOptions) valse.MiddlewareHandler {
 			req := createRequest(ctx)
 			res := createResponse(ctx)
 
-			lock.Lock()
-			defer lock.Unlock()
+			L := <-ch
+			defer func() {
+				go func() {
+					ch <- L
+				}()
+			}()
+
 			L.GetGlobal("runMiddlewares")
 
 			luar.GoToLua(L, req)
