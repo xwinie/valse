@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -202,6 +203,28 @@ func (s *Server) Use(handlers ...interface{}) *Server {
 	return s
 }
 
+func cpy(hns []MiddlewareHandler, r RequestHandler) []interface{} {
+	out := make([]interface{}, len(hns)+1)
+	for i, rr := range hns {
+		out[i] = rr
+	}
+	out[len(hns)] = r
+
+	return out
+}
+
+func (s *Server) Mount(path string, group *Group) *Server {
+	for _, route := range group.r {
+		p := route.Path
+		if path != "" {
+			p = filepath.Join(path, route.Path)
+		}
+
+		s.Route(route.Method, p, cpy(group.m, route.Handler)...)
+	}
+	return s
+}
+
 func (s *Server) Get(path string, handlers ...interface{}) *Server {
 	return s.Route(strong.GET, path, handlers...)
 }
@@ -252,6 +275,8 @@ func (s *Server) toMiddlewareHandler(handler interface{}) (MiddlewareHandler, er
 		return h, nil
 	case func(ctx *Context, next RequestHandler) error:
 		return cWrapper(h), nil
+	case MiddlewareHandler:
+		return h, nil
 
 	default:
 		return nil, errors.New("middleware is of wrong type")
@@ -277,6 +302,7 @@ func (s *Server) Listen(address string) error {
 
 func (s *Server) compose(handlers []interface{}) (RequestHandler, error) {
 	last := handlers[len(handlers)-1]
+
 	var routeHandler func(ctx *Context) error
 	if fn, ok := last.(func(ctx *Context) error); ok {
 		routeHandler = fn
@@ -290,6 +316,8 @@ func (s *Server) compose(handlers []interface{}) (RequestHandler, error) {
 		routeHandler = rWrapper(fasthttpadaptor.NewFastHTTPHandlerFunc(fn))
 	} else if fn, ok := last.(ValseHTTPHandler); ok {
 		routeHandler = fn.ServeHTTP
+	} else if fn, ok := last.(RequestHandler); ok {
+		routeHandler = fn
 	} else {
 		return nil, errors.New("The last handle must be a RequestHandler or a fasthttp Handler")
 	}
