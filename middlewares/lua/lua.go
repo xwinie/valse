@@ -14,6 +14,11 @@ import (
 	"github.com/stevedonovan/luar"
 )
 
+type VM struct {
+	state *lua.State
+	id    int
+}
+
 func createRequest(ctx *valse.Context) luar.Map {
 	return luar.Map{
 		"header": luar.Map{
@@ -62,7 +67,6 @@ func createResponse(ctx *valse.Context) luar.Map {
 type LuaOptions struct {
 	Path        string
 	StopOnError bool
-	Lua         *lua.State
 	LuaFactory  func() *lua.State
 	WorkQueue   int
 }
@@ -72,7 +76,9 @@ type File struct {
 	Content string
 }
 
-func createLua(options LuaOptions, logger logrus.FieldLogger, files []File) *lua.State {
+type RouterFactory func(method, path string, id int)
+
+func createLua(options LuaOptions, logger logrus.FieldLogger, files []File, factory RouterFactory) *lua.State {
 	var L *lua.State
 
 	if options.LuaFactory != nil {
@@ -81,6 +87,21 @@ func createLua(options LuaOptions, logger logrus.FieldLogger, files []File) *lua
 		L = luar.Init()
 		L.OpenLibs()
 	}
+
+	L.Register("__create_route", func(state *lua.State) int {
+		method := state.ToString(1)
+		route := state.ToString(2)
+		id := state.ToInteger(3)
+
+		factory(method, route, id)
+		return 0
+	})
+
+	L.Register("__create_middleware", func(state *lua.State) int {
+		id := state.ToInteger(1)
+		factory("", "", id)
+		return 0
+	})
 
 	L.DoString(string(MustAsset("prelude.lua")))
 
@@ -131,11 +152,17 @@ func getSortedFiles(path string) ([]string, error) {
 	return fileNames, nil
 }
 
-func Lua(options LuaOptions) valse.MiddlewareHandler {
+type LuaValse struct {
+	o  LuaOptions
+	ch chan *lua.State
+	s  *valse.Server
+	id int
+}
 
+func (l LuaValse) loadFiles() []File {
 	logger := logrus.WithField("prefix", "middlewares:lua")
 
-	files, err := getSortedFiles(options.Path)
+	files, err := getSortedFiles(l.o.Path)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -151,41 +178,43 @@ func Lua(options LuaOptions) valse.MiddlewareHandler {
 			Content: string(bs),
 		})
 	}
+	return out
+}
 
-	//var lock sync.Mutex
-	wn := options.WorkQueue
+func (l *LuaValse) Open() {
+	wn := l.o.WorkQueue
 	if wn == 0 {
 		wn = 5
 	}
 
-	ch := make(chan *lua.State, wn+1)
+	logger := logrus.WithField("prefix", "middleware:lua")
+
+	files := l.loadFiles()
+
+	ch := make(chan *VM, wn+1)
 	for i := 0; i < wn; i++ {
-		ch <- createLua(options, logger, out)
-	}
-
-	return func(next valse.RequestHandler) valse.RequestHandler {
-		return func(ctx *valse.Context) error {
-
-			req := createRequest(ctx)
-			res := createResponse(ctx)
-
-			L := <-ch
-			defer func() {
-				go func() {
-					ch <- L
-				}()
-			}()
-
-			L.GetGlobal("runMiddlewares")
-
-			luar.GoToLua(L, req)
-			luar.GoToLua(L, res)
-			L.MustCall(2, 1)
-			if !L.ToBoolean(0) {
-				return nil
+		lua := createLua(l.o, logger, files, func(method, path string, id int) {
+			if id <= l.id {
+				return
 			}
+			l.id = id
+			if method == "" {
+				l.s.Use(middleware(id, ch))
+			} else {
+				l.s.Route(method, path, route(id, ch))
+			}
+		})
 
-			return next(ctx)
-		}
+		ch <- &VM{lua, i}
 	}
+
+}
+
+func (l *LuaValse) Close() {
+	for c := range l.ch {
+		c.Close()
+	}
+}
+func New(server *valse.Server, o LuaOptions) *LuaValse {
+	return &LuaValse{o, nil, server, 0}
 }
