@@ -14,6 +14,9 @@ import (
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 )
 
+type URI fasthttp.URI
+type LinksFactory func(c *Context, url URI, n int) string
+
 type RequestHandler func(*Context) error
 type MiddlewareHandler func(next RequestHandler) RequestHandler
 type ValseHTTPHandler interface {
@@ -167,6 +170,8 @@ type Config struct {
 	//
 	// By default standard logger from log package is used.
 	Logger Logger
+
+	LinksFactory LinksFactory
 }
 
 type Server struct {
@@ -176,6 +181,8 @@ type Server struct {
 	running bool
 	m       []MiddlewareHandler
 	p       sync.Pool
+
+	links LinksFactory
 }
 
 func (s *Server) Use(handlers ...interface{}) *Server {
@@ -352,7 +359,7 @@ func (s *Server) handleRequest(handler RequestHandler) fasthttp.RequestHandler {
 }
 
 func New() *Server {
-	return newWithServer(&fasthttp.Server{})
+	return newWithServer(&fasthttp.Server{}, &Config{})
 }
 
 func NewWithConfig(config Config) *Server {
@@ -374,17 +381,29 @@ func NewWithConfig(config Config) *Server {
 		Logger: config.Logger,
 	}
 
-	return newWithServer(s)
+	return newWithServer(s, &config)
 }
 
-func newWithServer(server *fasthttp.Server) *Server {
-	return &Server{
-		s: server,
-		r: fasthttprouter.New(),
-		p: sync.Pool{
-			New: func() interface{} {
-				return &Context{}
-			},
+func (s *Server) init(config *Config) {
+
+	s.p = sync.Pool{
+		New: func() interface{} {
+			return &Context{
+				s: s,
+			}
 		},
 	}
+
+}
+
+func newWithServer(server *fasthttp.Server, config *Config) *Server {
+
+	s := &Server{
+		s: server,
+		r: fasthttprouter.New(),
+	}
+
+	s.init(config)
+
+	return s
 }
