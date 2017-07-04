@@ -78,7 +78,7 @@ type File struct {
 
 type RouterFactory func(method, path string, id int)
 
-func createLua(options LuaOptions, logger logrus.FieldLogger, files []File, factory RouterFactory) *lua.State {
+func createLua(options LuaOptions, logger logrus.FieldLogger, files []File, factory RouterFactory) (*lua.State, error) {
 	var L *lua.State
 
 	if options.LuaFactory != nil {
@@ -103,21 +103,24 @@ func createLua(options LuaOptions, logger logrus.FieldLogger, files []File, fact
 		return 0
 	})
 
+	registerExtensions(L)
+
 	L.DoString(string(MustAsset("prelude.lua")))
 
 	for _, file := range files {
-		logger.Debugf("loading file: %s", file.Path)
+		//logger.Debugf("loading file: %s", file.Path)
 
 		err := L.DoString(file.Content)
 		if err != nil {
 			if options.StopOnError {
-				logger.Fatal(err)
+				return nil, err
 			}
 			logger.WithError(err).Errorf("could not load file: %s", file.Path)
 		}
 
 	}
-	return L
+
+	return L, nil
 }
 
 func getSortedFiles(path string) ([]string, error) {
@@ -181,7 +184,7 @@ func (l LuaValse) loadFiles() []File {
 	return out
 }
 
-func (l *LuaValse) Open() {
+func (l *LuaValse) Open() error {
 	wn := l.o.WorkQueue
 	if wn == 0 {
 		wn = 5
@@ -192,28 +195,38 @@ func (l *LuaValse) Open() {
 	files := l.loadFiles()
 
 	ch := make(chan *VM, wn+1)
+	logger.Infof("Registering %d lua vm's", wn)
 	for i := 0; i < wn; i++ {
-		lua := createLua(l.o, logger, files, func(method, path string, id int) {
+		lua, err := createLua(l.o, logger, files, func(method, path string, id int) {
 			if id <= l.id {
 				return
 			}
 			l.id = id
 			if method == "" {
+				logger.Debugf("middleware '%d' added", id)
 				l.s.Use(middleware(id, ch))
 			} else {
+				logger.Debugf("path '%d' added: '%s'", id, path)
 				l.s.Route(method, path, route(id, ch))
 			}
 		})
 
+		if err != nil {
+			return err
+		}
+
 		ch <- &VM{lua, i}
 	}
 
+	return nil
 }
 
 func (l *LuaValse) Close() {
 	for c := range l.ch {
 		c.Close()
 	}
+	close(l.ch)
+
 }
 func New(server *valse.Server, o LuaOptions) *LuaValse {
 	return &LuaValse{o, nil, server, 0}

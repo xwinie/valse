@@ -1,7 +1,6 @@
 package lua
 
 import (
-	"github.com/Sirupsen/logrus"
 	"github.com/kildevaeld/valse"
 	"github.com/stevedonovan/luar"
 )
@@ -15,10 +14,10 @@ func execute(ctx *valse.Context, ch chan *VM, id int, middleware bool) bool {
 		ch <- vm
 	}()
 
-	logrus.WithFields(logrus.Fields{
+	/*logrus.WithFields(logrus.Fields{
 		"path": string(ctx.Path()),
 		"vm":   vm.id,
-	}).Debugf("excute lua script")
+	}).Debugf("execute lua script")*/
 
 	state := vm.state
 	state.GetGlobal("router")
@@ -34,6 +33,7 @@ func execute(ctx *valse.Context, ch chan *VM, id int, middleware bool) bool {
 }
 
 func route(id int, ch chan *VM) valse.RequestHandler {
+
 	return func(ctx *valse.Context) error {
 
 		execute(ctx, ch, id, false)

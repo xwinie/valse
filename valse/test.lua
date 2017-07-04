@@ -1,5 +1,5 @@
 
-
+local json = require 'json'
 
 function fn(req, res)
    
@@ -9,7 +9,11 @@ function fn(req, res)
 end
 
 router:get("/test", function (req, res)
-    res.write("hello, world")
+    local str, err = valse.json.encode({
+        rapper = "er lige med"
+    })
+    res.header.set('Content-Type', 'application/json')
+    res.write(str)
 end)
 
-router:use(fn)
+--router:use(fn)
