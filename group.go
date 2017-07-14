@@ -2,6 +2,7 @@ package valse
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/kildevaeld/strong"
 	"github.com/valyala/fasthttp"
@@ -76,6 +77,18 @@ func (g *Group) Route(method, path string, handlers ...interface{}) *Group {
 	})
 
 	return g
+}
+
+func (s *Group) Mount(path string, group *Group) *Group {
+	for _, route := range group.r {
+		p := route.Path
+		if path != "" {
+			p = filepath.Join(path, route.Path)
+		}
+
+		s.Route(route.Method, p, cpy(group.m, route.Handler)...)
+	}
+	return s
 }
 
 func NewGroup() *Group {

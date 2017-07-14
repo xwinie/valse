@@ -16,4 +16,16 @@ router:get("/test", function (req, res)
     res.write(str)
 end)
 
+router:get("/", function (req, res) 
+
+    res.header.set("Content-Type", "text/html")
+    print("here", render_html)
+    res.write(render_html(function()
+        return div {
+            h1 "Hello, World"
+        }
+    end))
+
+end)
+
 --router:use(fn)

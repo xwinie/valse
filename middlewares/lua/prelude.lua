@@ -54,7 +54,6 @@ function register(middleware)
 	local l = table.getn(a)
 	a[l] = middleware
 end
-
 function runMiddlewares(req, res)
 	for _, k in pairs(a)  do
 		local ret = k(req, res)
@@ -110,4 +109,3 @@ end
 
 
 router = Router()
-
