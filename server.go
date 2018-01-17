@@ -12,6 +12,7 @@ import (
 	"github.com/kildevaeld/strong"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"gopkg.in/go-playground/validator.v9"
 )
 
 type URI fasthttp.URI
@@ -24,12 +25,12 @@ type ValseHTTPHandler interface {
 }
 
 func notFoundOrErr(ctx *Context, err error) error {
-	if ctx.Response.StatusCode() == strong.StatusNotFound || err == nil {
+	if ctx.Response.StatusCode() == StatusNotFound || err == nil {
 		return nil
 	}
 	status := http.StatusInternalServerError
-	if e, ok := err.(*strong.HttpError); ok {
-		ctx.Error(e.Message(), e.Code())
+	if e, ok := err.(*Entity); ok {
+		ctx.Error(e.Message(), e.EntityCode())
 		return nil
 	}
 
@@ -183,6 +184,7 @@ type Server struct {
 	p       sync.Pool
 
 	links LinksFactory
+	v     *validator.Validate
 }
 
 func (s *Server) Use(handlers ...interface{}) *Server {
@@ -401,6 +403,7 @@ func newWithServer(server *fasthttp.Server, config *Config) *Server {
 	s := &Server{
 		s: server,
 		r: fasthttprouter.New(),
+		v: validator.New(),
 	}
 
 	s.init(config)

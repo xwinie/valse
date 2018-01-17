@@ -1,14 +1,16 @@
 package valse
 
 import (
-	"bytes"
-	"encoding/json"
-	"regexp"
-
+	"github.com/json-iterator/go"
 	"github.com/kildevaeld/strong"
 	"github.com/valyala/fasthttp"
 )
 
+var (
+	json = jsoniter.ConfigCompatibleWithStandardLibrary
+)
+
+// Context represents the context of the HTTP request.
 type Context struct {
 	noCopy
 	*fasthttp.RequestCtx
@@ -21,15 +23,18 @@ func (c *Context) reset() *Context {
 	return c
 }
 
+// Log log function
 func (c *Context) Log() Logger {
 	return c.log
 }
 
+// Status sets the response status code.
 func (c *Context) Status(status int) *Context {
 	c.SetStatusCode(status)
 	return c
 }
 
+// JSON marshal the Object to JSON and writes it via the ResponseWriter.
 func (c *Context) JSON(v interface{}) error {
 	c.SetStatusCode(strong.StatusOK)
 	c.Response.Header.Set(strong.HeaderContentType, strong.MIMEApplicationJSONCharsetUTF8)
@@ -41,6 +46,7 @@ func (c *Context) JSON(v interface{}) error {
 	return nil
 }
 
+// Text marshal the string to JSON and writes it via the ResponseWriter.
 func (c *Context) Text(v string) error {
 	c.SetStatusCode(strong.StatusOK)
 	c.Response.Header.Set(strong.HeaderContentType, strong.MIMETextPlainCharsetUTF8)
@@ -48,65 +54,32 @@ func (c *Context) Text(v string) error {
 	return nil
 }
 
-type Link struct {
-	Last    int
-	First   int
-	Current int
-	//Next    int
-	//Prev int
-	Path []byte
+// PathParameter accesses the Path parameter value by its name
+func (c *Context) PathParameter(name string) string {
+	return c.UserValue(name).(string)
 }
 
-var reg = regexp.MustCompile("https?:.*")
-
-const loverheader = 7
-
-func writelink(rel string, url *fasthttp.URI) []byte {
-	//l := len(rel) + loverheader + len(url.FullURI())
-	//out := make([]byte, l)
-	buf := bytes.NewBuffer(nil)
-	buf.WriteString("<")
-	buf.Write(url.FullURI())
-	buf.WriteString(`>; rel="` + rel + `"`)
-
-	return buf.Bytes()
+// QueryParameter returns the (first) Query parameter value by its name
+func (c *Context) QueryParameter(name string) []byte {
+	return c.FormValue(name)
 }
 
-func (c *Context) SetLinkHeader(l Link) *Context {
-	path := c.Path()
-	if l.Path != nil {
-		path = l.Path
-	}
-	url := fasthttp.AcquireURI()
-	defer fasthttp.ReleaseURI(url)
-	if !reg.Match(path) {
-		c.URI().CopyTo(url)
-		url.SetPathBytes(path)
-	} else {
-		url.UpdateBytes(path)
-	}
+// BodyParameter parses the body of the request (once for typically a POST or a PUT) and returns the value of the given name or an error.
+func (c *Context) BodyParameter(name string) []byte {
+	return c.FormValue(name)
+}
 
-	var links [][]byte
-	var page = []byte("page")
-	args := url.QueryArgs()
+// GetJSONObject call json.Unmarshal by sending the reference of the given object.
+func (c *Context) GetJSONObject(object interface{}) error {
+	return json.Unmarshal(c.PostBody(), &object)
+}
 
-	args.SetUintBytes(page, l.First)
-	links = append(links, writelink("first", url))
+// GetBody read post put and delete request body return body []byte
+func (c *Context) GetBody() []byte {
+	return c.PostBody()
+}
 
-	args.SetUintBytes(page, l.Current)
-	links = append(links, writelink("current", url))
-
-	if l.Last > l.Current {
-		args.SetUintBytes(page, l.Current+1)
-		links = append(links, writelink("next", url))
-	}
-	if l.Current > l.First {
-		args.SetUintBytes(page, l.Current-1)
-		links = append(links, writelink("prev", url))
-	}
-	args.SetUintBytes(page, l.Last)
-	links = append(links, writelink("last", url))
-	c.Response.Header.SetBytesV("Link", bytes.Join(links, []byte(", ")))
-
-	return c
+// HeaderParameter returns the HTTP Header value of a Header name or empty if missing
+func (c *Context) HeaderParameter(name string) []byte {
+	return c.Request.Header.Peek(name)
 }

@@ -27,11 +27,8 @@ func TestServer(t *testing.T) {
 		}
 	})
 
-	s.Get("/", func(ctx *Context, next RequestHandler) error {
-		fmt.Printf("HEllo")
-		return next(ctx)
-	}, func(ctx *Context) error {
-		return ctx.JSON("Hello")
+	s.Get("/s", func(ctx *Context) error {
+		return ctx.JSON(string(ctx.RequestURI()))
 	})
 
 	s.Listen(":3000")
