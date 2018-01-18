@@ -83,3 +83,10 @@ func (c *Context) GetBody() []byte {
 func (c *Context) HeaderParameter(name string) []byte {
 	return c.Request.Header.Peek(name)
 }
+
+// SetHeader sets to the response the header entries associated with key to
+// the single element value.  It replaces any existing
+// values associated with key.
+func (c *Context) SetHeader(key, value string) {
+	c.Response.Header.Set(key, value)
+}
