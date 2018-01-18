@@ -293,7 +293,7 @@ func (s *Server) toMiddlewareHandler(handler interface{}) (MiddlewareHandler, er
 }
 
 //ServerHandler 获取当前服务结构
-func (s *Server) ServerHandler() {
+func (s *Server) serverHandler() {
 	handlers := rWrapper(s.r.Handler)
 	for i := len(s.m) - 1; i >= 0; i-- {
 		handlers = s.m[i](handlers)
@@ -304,7 +304,7 @@ func (s *Server) ServerHandler() {
 
 //GetHandler 获取所有的handler
 func (s *Server) GetHandler() fasthttp.RequestHandler {
-	s.ServerHandler()
+	s.serverHandler()
 	return s.s.Handler
 }
 
@@ -316,7 +316,7 @@ func (s *Server) Listen(address string) error {
 	}
 	s.running = true
 
-	s.ServerHandler()
+	s.serverHandler()
 
 	return s.s.ListenAndServe(address)
 }

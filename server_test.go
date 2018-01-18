@@ -45,9 +45,14 @@ func TestHttpServer(t *testing.T) {
 	s.Get("/s", func(ctx *Context) error {
 		return ctx.JSON(string(bytes.TrimLeft(ctx.RequestURI(), "/")))
 	})
-	s.ServerHandler()
+	s.Get("/n", func(ctx *Context) error {
+		return ctx.JSON(string(bytes.TrimLeft(ctx.RequestURI(), "/")))
+	})
 	e := fastHTTPTester(t, s.GetHandler())
 	e.GET("/s").Expect().
+		Status(200).
+		Text().Equal("pong")
+	e.GET("/n").Expect().
 		Status(200).
 		Text().Equal("pong")
 }
