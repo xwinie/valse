@@ -109,7 +109,7 @@ func (c *Context) SaveFile(file string) error {
 	defer fh.Close() // 记得要关
 
 	// 打开保存文件句柄
-	fp, err := os.OpenFile("saveto.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+	fp, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		c.Status(500)
 		return err
