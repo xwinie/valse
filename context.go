@@ -1,6 +1,9 @@
 package valse
 
 import (
+	"io"
+	"os"
+
 	"github.com/json-iterator/go"
 	"github.com/kildevaeld/strong"
 	"github.com/valyala/fasthttp"
@@ -89,4 +92,43 @@ func (c *Context) HeaderParameter(name string) []byte {
 // values associated with key.
 func (c *Context) SetHeader(key, value string) {
 	c.Response.Header.Set(key, value)
+}
+
+// SaveFile 文件上传
+func (c *Context) SaveFile(file string) error {
+	f, err := c.FormFile(file)
+	if err != nil {
+		c.Status(500)
+		return err
+	}
+	fh, err := f.Open()
+	if err != nil {
+		c.Status(500)
+		return err
+	}
+	defer fh.Close() // 记得要关
+
+	// 打开保存文件句柄
+	fp, err := os.OpenFile("saveto.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+	if err != nil {
+		c.Status(500)
+		return err
+	}
+	defer fp.Close() // 记得要关
+
+	if _, err = io.Copy(fp, fh); err != nil {
+		c.Status(500)
+		return err
+	}
+	return nil
+}
+
+//File 文件下载
+func (c *Context) File(path string) {
+	c.SendFile(path)
+}
+
+//FileBytes 文件下载byte
+func (c *Context) FileBytes(path []byte) {
+	c.SendFileBytes(path)
 }
